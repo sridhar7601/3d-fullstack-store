@@ -3,10 +3,11 @@ import { useFrame, Canvas, useThree } from '@react-three/fiber';
 import { useGLTF, OrbitControls, PerspectiveCamera, Sky, Environment, Html } from '@react-three/drei';
 import * as THREE from 'three';
 
-function Model({ modelData, onModelClick }) {
+function Model({ modelData, config }) {
   const { scene } = useGLTF(modelData.gltfUrl);
   const groupRef = useRef();
   const { raycaster, camera, mouse } = useThree();
+  const [hoveredMesh, setHoveredMesh] = useState(null);
 
   useEffect(() => {
     console.log('Model loaded:', scene);
@@ -23,13 +24,16 @@ function Model({ modelData, onModelClick }) {
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(groupRef.current.children, true);
       if (intersects.length > 0) {
-        const clickedMesh = intersects[0].object;
-        if (clickedMesh.userData.type === 'clickable') {
+        const intersectedMesh = intersects[0].object;
+        if (config[intersectedMesh.name]?.hover) {
+          setHoveredMesh(intersectedMesh.name);
           document.body.style.cursor = 'pointer';
         } else {
+          setHoveredMesh(null);
           document.body.style.cursor = 'default';
         }
       } else {
+        setHoveredMesh(null);
         document.body.style.cursor = 'default';
       }
     }
@@ -41,13 +45,25 @@ function Model({ modelData, onModelClick }) {
       const intersects = raycaster.intersectObjects(groupRef.current.children, true);
       if (intersects.length > 0) {
         const clickedMesh = intersects[0].object;
-        if (clickedMesh.userData.type === 'clickable') {
-          console.log('Mesh clicked:', clickedMesh.name);
-          onModelClick(clickedMesh.name || 'Unnamed part');
+        if (config[clickedMesh.name]?.click) {
+          alert(`Clicked on ${clickedMesh.name}: ${config[clickedMesh.name].click}`);
         }
       }
     }
   };
+
+  useEffect(() => {
+    scene.traverse((child) => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        if (child.name === hoveredMesh) {
+          child.material.emissive = new THREE.Color(0x00ff00);
+        } else {
+          child.material.emissive = new THREE.Color(0x000000);
+        }
+      }
+    });
+  }, [scene, hoveredMesh]);
 
   return (
     <group ref={groupRef} onClick={handleClick}>
@@ -75,6 +91,7 @@ function LoadingFallback() {
 
 function UserPage() {
   const [modelData, setModelData] = useState(null);
+  const [config, setConfig] = useState({});
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -87,16 +104,22 @@ function UserPage() {
         const data = await response.json();
         console.log('Received model info:', data);
         
-        const modelData = {
+        setModelData({
           gltfUrl: `http://localhost:3000/uploads/${data.gltfFile}`,
           textureUrls: {
             baseColor: data.textures.find(t => t.includes('baseColor')) ? `http://localhost:3000/uploads/textures/${data.textures.find(t => t.includes('baseColor'))}` : null,
             normal: data.textures.find(t => t.includes('normal')) ? `http://localhost:3000/uploads/textures/${data.textures.find(t => t.includes('normal'))}` : null,
             metallicRoughness: data.textures.find(t => t.includes('metallicRoughness')) ? `http://localhost:3000/uploads/textures/${data.textures.find(t => t.includes('metallicRoughness'))}` : null,
           }
-        };
-        
-        setModelData(modelData);
+        });
+
+        // Fetch configuration
+        const configResponse = await fetch('http://localhost:3000/get-config');
+        if (!configResponse.ok) {
+          throw new Error(`HTTP error! status: ${configResponse.status}`);
+        }
+        const configData = await configResponse.json();
+        setConfig(configData);
       } catch (error) {
         console.error('Error in fetchModelInfo:', error);
         setError(error.message);
@@ -105,11 +128,6 @@ function UserPage() {
 
     fetchModelInfo();
   }, []);
-
-  const handleModelClick = (partName) => {
-    // console.log(`You clicked on: ${partName}`);
-    // alert(`You clicked on: ${partName}`);
-  };
 
   if (error) {
     return <div>Error: {error}</div>;
@@ -132,7 +150,12 @@ function UserPage() {
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} intensity={1} />
         <Suspense fallback={<LoadingFallback />}>
-          <Model modelData={modelData} onModelClick={handleModelClick} scale={0.01} position={[0, -1, 0]} />
+          <Model 
+            modelData={modelData} 
+            config={config}
+            scale={0.01} 
+            position={[0, -1, 0]} 
+          />
         </Suspense>
         <Environment preset="sunset" background />
       </Canvas>

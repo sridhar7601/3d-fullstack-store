@@ -3,8 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF, OrbitControls, PerspectiveCamera, Sky, Environment, Html } from '@react-three/drei';
 import * as THREE from 'three';
 
-// Reuse the Model component from UserPage
-function Model({ modelData, onModelClick }) {
+function Model({ modelData, onModelClick, selectedMesh }) {
   const { scene } = useGLTF(modelData.gltfUrl);
   const groupRef = useRef();
   const { raycaster, camera, mouse } = useThree();
@@ -24,8 +23,8 @@ function Model({ modelData, onModelClick }) {
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(groupRef.current.children, true);
       if (intersects.length > 0) {
-        const clickedMesh = intersects[0].object;
-        if (clickedMesh.userData.type === 'clickable') {
+        const hoveredMesh = intersects[0].object;
+        if (hoveredMesh.userData.type === 'clickable') {
           document.body.style.cursor = 'pointer';
         } else {
           document.body.style.cursor = 'default';
@@ -49,6 +48,19 @@ function Model({ modelData, onModelClick }) {
       }
     }
   };
+
+  useEffect(() => {
+    scene.traverse((child) => {
+      if (child.isMesh) {
+        child.material = child.material.clone();
+        if (child.name === selectedMesh) {
+          child.material.emissive = new THREE.Color(0x00ff00);
+        } else {
+          child.material.emissive = new THREE.Color(0x000000);
+        }
+      }
+    });
+  }, [scene, selectedMesh]);
 
   return (
     <group ref={groupRef} onClick={handleClick}>
@@ -81,6 +93,8 @@ function AdminPage() {
     textures: []
   });
   const [modelData, setModelData] = useState(null);
+  const [selectedMesh, setSelectedMesh] = useState(null);
+  const [config, setConfig] = useState({});
 
   const handleFileChange = (e) => {
     const { name, files: selectedFiles } = e.target;
@@ -103,11 +117,16 @@ function AdminPage() {
         method: 'POST',
         body: formData,
       });
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Upload error:', errorData);
+        alert(`Upload failed: ${errorData.error || 'Unknown error'}`);
+        return;
+      }
       const data = await response.json();
       console.log('Upload successful:', data);
       alert('Files uploaded successfully');
       
-      // Set the modelData for preview
       setModelData({
         gltfUrl: `http://localhost:3000/uploads/${data.gltfFile}`,
         textureUrls: {
@@ -122,48 +141,126 @@ function AdminPage() {
     }
   };
 
-  const handleModelClick = (partName) => {
-    console.log(`Clicked on: ${partName}`);
+  const handleModelClick = (meshName) => {
+    setSelectedMesh(meshName);
+  };
+
+  const handleConfigChange = (action, value) => {
+    setConfig(prevConfig => ({
+      ...prevConfig,
+      [selectedMesh]: {
+        ...prevConfig[selectedMesh],
+        [action]: value
+      }
+    }));
+  };
+
+  const saveConfig = async () => {
+    console.log("Config data being sent:", config); // Log the data before sending it
+
+    // Validate that config is not empty
+    if (Object.keys(config).length === 0) {
+      alert('No configuration to save. Please select a mesh and set actions.');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:3000/save-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config), // Use 'config' instead of 'configData'
+      });
+      const data = await response.json();
+      console.log('Response data:', data);
+      if (!response.ok) {
+        throw new Error(data.error || 'Error saving configuration');
+      }
+      alert('Configuration saved successfully');
+    } catch (error) {
+      console.error('Error saving configuration:', error);
+      alert(`Failed to save configuration: ${error.message}`);
+    }
   };
 
   return (
-    <div>
-      <h1>Admin Page</h1>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="gltf">GLTF File:</label>
-          <input type="file" id="gltf" name="gltf" onChange={handleFileChange} accept=".gltf" required />
-        </div>
-        <div>
-          <label htmlFor="bin">BIN File:</label>
-          <input type="file" id="bin" name="bin" onChange={handleFileChange} accept=".bin" required />
-        </div>
-        <div>
-          <label htmlFor="textures">Texture Files:</label>
-          <input type="file" id="textures" name="textures" onChange={handleFileChange} accept="image/*" multiple />
-        </div>
-        <button type="submit">Upload Files</button>
-      </form>
+    <div style={{ display: 'flex' }}>
+      <div style={{ width: '300px', padding: '20px', overflowY: 'auto', height: '100vh' }}>
+        <h1>Admin Page</h1>
+        <form onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="gltf">GLTF File:</label>
+            <input type="file" id="gltf" name="gltf" onChange={handleFileChange} accept=".gltf" required />
+          </div>
+          <div>
+            <label htmlFor="bin">BIN File:</label>
+            <input type="file" id="bin" name="bin" onChange={handleFileChange} accept=".bin" required />
+          </div>
+          <div>
+            <label htmlFor="textures">Texture Files:</label>
+            <input type="file" id="textures" name="textures" onChange={handleFileChange} accept="image/*" multiple />
+          </div>
+          <button type="submit">Upload Files</button>
+        </form>
 
-      {modelData && (
-        <div style={{ width: '100%', height: '500px', marginTop: '20px' }}>
-          <Canvas>
+        <h2>Configuration Panel</h2>
+        {selectedMesh ? (
+          <>
+            <h3>{selectedMesh}</h3>
+            <div>
+              <label>
+                Hover Action:
+                <input
+                  type="text"
+                  value={config[selectedMesh]?.hover || ''}
+                  onChange={(e) => handleConfigChange('hover', e.target.value)}
+                  placeholder="Enter hover action"
+                />
+              </label>
+            </div>
+            <div>
+              <label>
+                Click Action:
+                <input
+                  type="text"
+                  value={config[selectedMesh]?.click || ''}
+                  onChange={(e) => handleConfigChange('click', e.target.value)}
+                  placeholder="Enter click action"
+                />
+              </label>
+            </div>
+            <button onClick={saveConfig} style={{ marginTop: '10px' }}>Save Configuration</button>
+          </>
+        ) : (
+          <p>Select a mesh from the model to configure actions.</p>
+        )}
+      </div>
+      <div style={{ flex: 1, height: '100vh' }}>
+        {modelData ? (
+          <Canvas style={{ width: '100%', height: '100%' }}>
             <PerspectiveCamera makeDefault position={[0, 5, 10]} fov={60} />
-            <OrbitControls 
-              enablePan={true}
-              enableZoom={true}
-              enableRotate={true}
-            />
+            <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
             <Sky />
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={1} />
             <Suspense fallback={<LoadingFallback />}>
-              <Model modelData={modelData} onModelClick={handleModelClick} scale={0.01} position={[0, -1, 0]} />
+              <Model 
+                modelData={modelData} 
+                onModelClick={handleModelClick}
+                selectedMesh={selectedMesh}
+                scale={0.01} 
+                position={[0, -1, 0]} 
+              />
             </Suspense>
             <Environment preset="sunset" background />
           </Canvas>
-        </div>
-      )}
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <p>No model uploaded. Please upload model files to get started.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

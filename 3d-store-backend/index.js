@@ -3,11 +3,15 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+// const express = require('express');
+
 
 const app = express();
 const PORT = 3000;
 
 app.use(cors());
+app.use(express.json());
+
 
 // Serve static files from the 'uploads' directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -38,7 +42,7 @@ const upload = multer({ storage: storage });
 app.post('/upload', upload.fields([
   { name: 'gltf', maxCount: 1 },
   { name: 'bin', maxCount: 1 },
-  { name: 'textures', maxCount: 10 }
+  { name: 'textures', maxCount: 20 }
 ]), (req, res) => {
   const files = req.files;
   console.log('Uploaded files:', files);
@@ -81,6 +85,40 @@ app.get('/model-info', (req, res) => {
   } catch (error) {
     console.error('Error reading uploads directory:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/save-config', (req, res) => {
+  const config = req.body;
+console.log( config,"config")
+  if (!config || typeof config !== 'object') {
+    return res.status(400).json({ error: 'Configuration data must be an object' });
+  }
+
+  // If valid, save it to the file system
+  try {
+    fs.writeFileSync(path.join(__dirname, 'meshConfig.json'), JSON.stringify(config, null, 2));
+    res.json({ message: 'Configuration saved successfully' });
+  } catch (error) {
+    console.error('Error saving configuration:', error);
+    res.status(500).json({ error: 'Failed to save configuration: ' + error.message });
+  }
+});
+
+
+// New endpoint to get mesh configurations
+app.get('/get-config', (req, res) => {
+  const configPath = path.join(__dirname, 'meshConfig.json');
+  try {
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      res.json(config);
+    } else {
+      res.json({}); // Return an empty object if the file doesn't exist
+    }
+  } catch (error) {
+    console.error('Error reading configuration:', error);
+    res.status(500).json({ error: 'Failed to read configuration' });
   }
 });
 
