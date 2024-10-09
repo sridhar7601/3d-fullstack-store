@@ -1,6 +1,8 @@
 {
   "Pillow": {
-    "hover": "pillow",
-    "click": "worked from backend"
+    "click": "pillow - 40D"
+  },
+  "Seat": {
+    "click": "seat - 40"
   }
 }
