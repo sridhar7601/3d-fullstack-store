@@ -23,7 +23,6 @@ const storage = multer.diskStorage({
     
     const dir = path.join(__dirname, 'uploads', modelName);
 
-    // Create a directory for each model if it doesn't exist
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -45,25 +44,24 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// In your upload endpoint
 app.post('/upload', upload.fields([
   { name: 'gltf', maxCount: 1 },
   { name: 'bin', maxCount: 1 },
   { name: 'textures', maxCount: 100 }
 ]), (req, res) => {
-  console.log('Request Body:', req.body);
   const files = req.files;
   const modelName = req.body.modelName;
   const position = JSON.parse(req.body.position || '{"x":0,"y":0,"z":0}');
   const scale = JSON.parse(req.body.scale || '{"x":1,"y":1,"z":1}');
   const tableNumber = parseInt(req.body.tableNumber) || 1;
-  // const type = req.body.type || 'other'; // Add this line
+  const type = req.body.type || 'other';
+  const price = parseFloat(req.body.price) || 0;
+  const description = req.body.description || '';
 
   if (!files.gltf || !files.bin) {
     return res.status(400).send('Both GLTF and BIN files are required');
   }
 
-  // Save model information including position, scale, table number, and type
   const modelInfo = {
     name: modelName,
     gltf: files.gltf[0].filename,
@@ -72,7 +70,9 @@ app.post('/upload', upload.fields([
     position,
     scale,
     tableNumber,
-    // type // Include type in modelInfo
+    type,
+    price,
+    description
   };
 
   const modelInfoPath = path.join(__dirname, 'uploads', modelName, 'info.json');
@@ -83,7 +83,7 @@ app.post('/upload', upload.fields([
     modelInfo
   });
 });
-// Get all products endpoint
+
 app.get('/products', (req, res) => {
   const uploadsDir = path.join(__dirname, 'uploads');
   
@@ -107,7 +107,6 @@ app.get('/products', (req, res) => {
   }
 });
 
-// Start the server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
